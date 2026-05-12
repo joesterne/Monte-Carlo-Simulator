@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  AreaChart, Area, BarChart, Bar, Cell, LabelList 
+  AreaChart, Area, BarChart, Bar, Cell, LabelList, ReferenceLine
 } from 'recharts';
 import { 
   Play, 
@@ -59,6 +59,13 @@ export default function MonteCarloDashboard() {
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [isGeneratingInsight, setIsGeneratingInsight] = useState(false);
   const [showConfidenceBands, setShowConfidenceBands] = useState(true);
+  const [simulationHistory, setSimulationHistory] = useState<Array<{
+    timestamp: string;
+    initialValue: number;
+    mean: number;
+    volatility: number;
+    medianFinal: number;
+  }>>([]);
 
   const stats = useMemo(() => {
     if (!result) return null;
@@ -73,6 +80,17 @@ export default function MonteCarloDashboard() {
     setTimeout(() => {
       const res = runMonteCarlo(params);
       setResult(res);
+      const runStats = calculateStatistics(res.finalValues);
+      setSimulationHistory((prev) => [
+        {
+          timestamp: new Date().toLocaleTimeString(),
+          initialValue: params.initialValue,
+          mean: params.mean,
+          volatility: params.volatility,
+          medianFinal: runStats.median,
+        },
+        ...prev,
+      ].slice(0, 8));
       setIsSimulating(false);
     }, 100);
   };
@@ -314,22 +332,22 @@ export default function MonteCarloDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] text-[#1A1A1A] font-sans p-4 md:p-8">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_20%_20%,#1f4d3f_0%,#0b1f1f_35%,#070b12_100%)] text-[#E8ECF1] font-sans p-4 md:p-8">
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-mono text-[10px] tracking-wider uppercase">
-                Simulation Engine v1.0
+              <Badge variant="outline" className="bg-amber-200/10 text-amber-300 border-amber-400/40 font-mono text-[10px] tracking-wider uppercase shadow-[0_0_14px_rgba(251,191,36,0.25)]">
+                Monte Carlo Royale
               </Badge>
             </div>
-            <h1 className="text-4xl font-bold tracking-tight text-gray-900">Monte Carlo Generator</h1>
+            <h1 className="text-4xl font-bold tracking-tight text-amber-100 drop-shadow-[0_2px_12px_rgba(251,191,36,0.25)]">Monte Carlo High Roller Suite</h1>
             <div className="flex items-center gap-2 mt-1">
-              <p className="text-gray-500 max-w-2xl">
+              <p className="text-emerald-100/80 max-w-2xl">
                 Simulate thousands of potential outcomes for asset growth using Geometric Brownian Motion. 
               </p>
-              <Badge variant="secondary" className="bg-blue-50 text-blue-600 border-blue-100 flex items-center gap-1 py-0 px-2 h-5">
+              <Badge variant="secondary" className="bg-emerald-400/10 text-emerald-200 border-emerald-300/30 flex items-center gap-1 py-0 px-2 h-5">
                 <Sparkles className="h-3 w-3" />
                 <span className="text-[10px] font-bold uppercase tracking-tighter">AI Enhanced</span>
               </Badge>
@@ -352,7 +370,7 @@ export default function MonteCarloDashboard() {
             <Button 
               onClick={runSimulation} 
               disabled={isSimulating}
-              className="bg-gray-900 hover:bg-gray-800 text-white px-8 h-12 rounded-xl shadow-lg shadow-gray-200 transition-all active:scale-95"
+              className="bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-black font-semibold px-8 h-12 rounded-xl shadow-[0_8px_30px_rgba(251,191,36,0.4)] transition-all active:scale-95"
             >
               {isSimulating ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4 fill-current" />}
               Run Simulation
@@ -363,11 +381,12 @@ export default function MonteCarloDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Sidebar Controls */}
           <aside className="lg:col-span-3 space-y-6">
-            <Card className="border-none shadow-sm bg-white overflow-hidden">
-              <CardHeader className="pb-4 border-b border-gray-50 bg-gray-50/50">
+            <Card className="relative border border-amber-300/15 shadow-2xl bg-black/30 backdrop-blur-md overflow-hidden">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-white/12 via-white/5 to-transparent" />
+              <CardHeader className="pb-4 border-b border-amber-200/10 bg-black/30">
                 <div className="flex items-center gap-2">
                   <Settings2 className="h-4 w-4 text-gray-400" />
-                  <CardTitle className="text-sm font-semibold uppercase tracking-wider text-gray-500">Parameters</CardTitle>
+                  <CardTitle className="text-sm font-semibold uppercase tracking-wider text-amber-200">Parameters</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="p-6 space-y-6">
@@ -470,7 +489,8 @@ export default function MonteCarloDashboard() {
               </CardContent>
             </Card>
 
-            <Card className="border-none shadow-sm bg-blue-600 text-white">
+            <Card className="relative border border-emerald-300/20 shadow-xl bg-gradient-to-br from-emerald-700/80 to-emerald-900/80 text-white overflow-hidden">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-emerald-100/30 via-emerald-100/10 to-transparent" />
               <CardContent className="p-6 space-y-2">
                 <div className="flex items-center gap-2 opacity-80">
                   <Info className="h-4 w-4" />
@@ -532,14 +552,15 @@ export default function MonteCarloDashboard() {
             </div>
 
             {/* Charts */}
-            <Card className="border-none shadow-sm bg-white">
+            <Card className="relative border border-amber-200/20 shadow-2xl bg-black/30 backdrop-blur-sm overflow-hidden">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-amber-100/15 via-amber-100/5 to-transparent" />
               <Tabs defaultValue="paths" className="w-full">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <div className="space-y-1">
                     <CardTitle className="text-lg font-bold">Visual Analysis</CardTitle>
                     <CardDescription>Explore the range of simulated trajectories and final distribution.</CardDescription>
                   </div>
-                  <TabsList className="bg-gray-100/50 p-1">
+                  <TabsList className="bg-black/30 border border-amber-200/10 p-1">
                     <div className="flex items-center gap-2 mr-4 px-2 border-r border-gray-200">
                       <Label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest cursor-pointer" htmlFor="bands-toggle">
                         Bands
@@ -564,21 +585,32 @@ export default function MonteCarloDashboard() {
                 </CardHeader>
                 <CardContent className="p-6">
                   <TabsContent value="paths" className="mt-0 outline-none">
-                    <div className="h-[400px] w-full">
+                    <div className="relative h-[400px] w-full rounded-xl border border-emerald-300/10 bg-gradient-to-b from-emerald-900/20 to-transparent p-2 overflow-hidden">
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-white/10 to-transparent" />
                       <ResponsiveContainer width="100%" height="100%">
                         <ComposedChart data={chartData}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F1F1" />
+                          <defs>
+                            <linearGradient id="confidenceOuter" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#DBEAFE" stopOpacity={0.45} />
+                              <stop offset="100%" stopColor="#EFF6FF" stopOpacity={0.15} />
+                            </linearGradient>
+                            <linearGradient id="confidenceInner" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#93C5FD" stopOpacity={0.35} />
+                              <stop offset="100%" stopColor="#BFDBFE" stopOpacity={0.10} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#33574A" />
                           <XAxis 
                             dataKey="time" 
                             axisLine={false} 
                             tickLine={false} 
-                            tick={{fontSize: 12, fill: '#94A3B8'}}
-                            label={{ value: 'Years', position: 'insideBottom', offset: -5, fontSize: 12, fill: '#94A3B8' }}
+                            tick={{fontSize: 12, fill: '#C7D2FE'}}
+                            label={{ value: 'Years', position: 'insideBottom', offset: -5, fontSize: 12, fill: '#C7D2FE' }}
                           />
                           <YAxis 
                             axisLine={false} 
                             tickLine={false} 
-                            tick={{fontSize: 12, fill: '#94A3B8'}}
+                            tick={{fontSize: 12, fill: '#C7D2FE'}}
                             tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`}
                           />
                           <Tooltip 
@@ -591,7 +623,7 @@ export default function MonteCarloDashboard() {
                                 type="monotone" 
                                 dataKey="p97_5" 
                                 stroke="none" 
-                                fill="#EFF6FF" 
+                                fill="url(#confidenceOuter)" 
                                 fillOpacity={1} 
                                 isAnimationActive={false}
                               />
@@ -599,7 +631,7 @@ export default function MonteCarloDashboard() {
                                 type="monotone" 
                                 dataKey="p95" 
                                 stroke="none" 
-                                fill="#DBEAFE" 
+                                fill="url(#confidenceInner)" 
                                 fillOpacity={1} 
                                 isAnimationActive={false}
                               />
@@ -621,6 +653,16 @@ export default function MonteCarloDashboard() {
                               />
                             </>
                           )}
+                          <Line
+                            type="monotone"
+                            dataKey="p50"
+                            stroke="#1D4ED8"
+                            strokeWidth={2.5}
+                            strokeDasharray="6 4"
+                            dot={false}
+                            isAnimationActive={false}
+                            opacity={0.9}
+                          />
                           
                           {result?.paths.map((_, i) => (
                             <Line 
@@ -628,7 +670,7 @@ export default function MonteCarloDashboard() {
                               type="monotone" 
                               dataKey={`path_${i}`} 
                               stroke={selectedPathIndex === i || hoveredPathIndex === i ? "#2563EB" : (selectedPathIndex !== null ? "#E2E8F0" : (i === 0 ? "#2563EB" : "#94A3B8"))} 
-                              strokeWidth={selectedPathIndex === i || hoveredPathIndex === i ? 4 : (i === 0 && selectedPathIndex === null ? 2 : 1)}
+                              strokeWidth={selectedPathIndex === i || hoveredPathIndex === i ? 4 : (i === 0 && selectedPathIndex === null ? 2.5 : 1)}
                               opacity={selectedPathIndex === i || hoveredPathIndex === i ? 1 : (selectedPathIndex !== null ? 0.2 : (i === 0 ? 1 : 0.15))}
                               dot={false}
                               isAnimationActive={false}
@@ -713,21 +755,28 @@ export default function MonteCarloDashboard() {
                   </TabsContent>
 
                   <TabsContent value="distribution" className="mt-0 outline-none">
-                    <div className="h-[400px] w-full">
+                    <div className="relative h-[400px] w-full rounded-xl border border-amber-300/10 bg-gradient-to-b from-amber-900/10 to-transparent p-2 overflow-hidden">
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-amber-100/15 to-transparent" />
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={histogramData}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F1F1" />
+                          <defs>
+                            <linearGradient id="histogramGradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#60A5FA" stopOpacity={0.95} />
+                              <stop offset="100%" stopColor="#2563EB" stopOpacity={0.65} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#5A4A2A" />
                           <XAxis 
                             dataKey="bin" 
                             axisLine={false} 
                             tickLine={false} 
-                            tick={{fontSize: 10, fill: '#94A3B8'}}
+                            tick={{fontSize: 10, fill: '#FCD34D'}}
                             tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`}
                           />
                           <YAxis 
                             axisLine={false} 
                             tickLine={false} 
-                            tick={{fontSize: 12, fill: '#94A3B8'}}
+                            tick={{fontSize: 12, fill: '#FCD34D'}}
                           />
                           <Tooltip 
                             cursor={{fill: '#F8FAFC'}}
@@ -740,11 +789,12 @@ export default function MonteCarloDashboard() {
                               return (
                                 <Cell 
                                   key={`cell-${index}`} 
-                                  fill={isMedian ? "#2563EB" : "#DBEAFE"} 
+                                  fill={isMedian ? "#1D4ED8" : "url(#histogramGradient)"} 
                                 />
                               );
                             })}
                           </Bar>
+                          {stats && <ReferenceLine x={stats.median} stroke="#1D4ED8" strokeDasharray="4 4" strokeOpacity={0.8} />}
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -986,6 +1036,29 @@ export default function MonteCarloDashboard() {
                     </div>
                   ))}
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border border-amber-200/20 shadow-2xl bg-black/30 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="text-lg font-bold">Simulation History</CardTitle>
+                <CardDescription>Recent runs and the median projected outcome.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {simulationHistory.length === 0 ? (
+                  <p className="text-sm text-gray-400">No runs recorded yet. Run a simulation to start tracking history.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {simulationHistory.map((entry, idx) => (
+                      <div key={`${entry.timestamp}-${idx}`} className="rounded-xl border border-amber-100/10 bg-black/25 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                        <div className="text-xs text-amber-200/90 font-mono">{entry.timestamp}</div>
+                        <div className="text-xs text-emerald-100/80">Start: {formatCurrency(entry.initialValue)}</div>
+                        <div className="text-xs text-emerald-100/80">μ: {formatPercent(entry.mean)} · σ: {formatPercent(entry.volatility)}</div>
+                        <div className="text-sm font-semibold text-amber-300">Median: {formatCurrency(entry.medianFinal)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </main>
