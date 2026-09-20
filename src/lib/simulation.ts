@@ -44,55 +44,47 @@ export function runMonteCarlo(params: SimulationParams): SimulationResult {
   const { initialValue, mean, volatility, timeHorizon, stepsPerYear, iterations, meanReversionSpeed } = params;
   
   const dt = 1 / stepsPerYear;
-  const sqrtDt = Math.sqrt(dt);
   const totalSteps = Math.floor(timeHorizon * stepsPerYear);
   const paths: number[][] = [];
-  const finalValues: number[] = new Array(Math.min(iterations, 5000));
+  const finalValues: number[] = [];
   const timePoints: number[] = Array.from({ length: totalSteps + 1 }, (_, i) => i * dt);
 
   // Store all values at each step to calculate percentiles
-  const safeIterations = Math.min(iterations, 5000);
-  const allValuesAtStep: number[][] = Array.from(
-    { length: totalSteps + 1 },
-    () => new Array(safeIterations)
-  );
+  const allValuesAtStep: number[][] = Array.from({ length: totalSteps + 1 }, () => []);
 
   // Limit iterations for performance in the browser
+  const safeIterations = Math.min(iterations, 5000);
   // Limit paths to display to avoid crashing Recharts
   const displayPathsCount = Math.min(safeIterations, 50);
 
-  const variance = volatility * volatility;
-  const driftPerStep = (mean - 0.5 * variance) * dt;
-  const expectedLogIncrement = (mean - 0.5 * variance) * dt;
-  const diffusionScale = volatility * sqrtDt;
-  const initialLogValue = Math.log(initialValue);
-
   for (let i = 0; i < safeIterations; i++) {
     const path: number[] = [initialValue];
-    allValuesAtStep[0][i] = initialValue;
+    allValuesAtStep[0].push(initialValue);
     let currentValue = initialValue;
-    let currentLogPrice = initialLogValue;
-    let expectedLogPrice = initialLogValue;
 
     for (let t = 1; t <= totalSteps; t++) {
-      expectedLogPrice += expectedLogIncrement;
-
+      const currentTime = t * dt;
+      
+      // Standard GBM drift
+      const gbmDrift = (mean - 0.5 * Math.pow(volatility, 2)) * dt;
+      
       // Mean reversion component
       // We revert the log-price towards the expected log-price path: ln(S0) + (mu - 0.5*sigma^2)*t
+      const expectedLogPrice = Math.log(initialValue) + (mean - 0.5 * Math.pow(volatility, 2)) * currentTime;
+      const currentLogPrice = Math.log(currentValue);
       const reversionDrift = meanReversionSpeed * (expectedLogPrice - currentLogPrice) * dt;
-
-      const diffusion = diffusionScale * randomNormal();
-
-      currentValue = currentValue * Math.exp(driftPerStep + reversionDrift + diffusion);
-      currentLogPrice = Math.log(currentValue);
+      
+      const diffusion = volatility * Math.sqrt(dt) * randomNormal(0, 1);
+      
+      currentValue = currentValue * Math.exp(gbmDrift + reversionDrift + diffusion);
       path.push(currentValue);
-      allValuesAtStep[t][i] = currentValue;
+      allValuesAtStep[t].push(currentValue);
     }
 
     if (i < displayPathsCount) {
       paths.push(path);
     }
-    finalValues[i] = currentValue;
+    finalValues.push(currentValue);
   }
 
   // Calculate percentiles for each step
