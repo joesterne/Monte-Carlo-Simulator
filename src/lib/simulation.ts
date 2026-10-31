@@ -29,7 +29,9 @@ export interface SimulationResult {
  * Generates a random number from a normal distribution using Box-Muller transform
  */
 export function randomNormal(mean: number = 0, stdDev: number = 1): number {
-  const u1 = Math.random();
+  // 1 - Math.random() maps the range to (0, 1]: Math.random() can return exactly 0,
+  // and Math.log(0) is -Infinity, which poisoned the whole path with NaN.
+  const u1 = 1 - Math.random();
   const u2 = Math.random();
   
   const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
@@ -42,6 +44,10 @@ export function randomNormal(mean: number = 0, stdDev: number = 1): number {
  */
 export function runMonteCarlo(params: SimulationParams): SimulationResult {
   const { initialValue, mean, volatility, timeHorizon, stepsPerYear, iterations, meanReversionSpeed } = params;
+
+  // Defense in depth: a non-positive or non-finite start value makes every path
+  // NaN (the engine takes Math.log of it). The dashboard input validates too.
+  const startValue = Number.isFinite(initialValue) && initialValue > 0 ? initialValue : 10000;
   
   const dt = 1 / stepsPerYear;
   const totalSteps = Math.floor(timeHorizon * stepsPerYear);
@@ -58,9 +64,9 @@ export function runMonteCarlo(params: SimulationParams): SimulationResult {
   const displayPathsCount = Math.min(safeIterations, 50);
 
   for (let i = 0; i < safeIterations; i++) {
-    const path: number[] = [initialValue];
-    allValuesAtStep[0].push(initialValue);
-    let currentValue = initialValue;
+    const path: number[] = [startValue];
+    allValuesAtStep[0].push(startValue);
+    let currentValue = startValue;
 
     for (let t = 1; t <= totalSteps; t++) {
       const currentTime = t * dt;
@@ -70,7 +76,7 @@ export function runMonteCarlo(params: SimulationParams): SimulationResult {
       
       // Mean reversion component
       // We revert the log-price towards the expected log-price path: ln(S0) + (mu - 0.5*sigma^2)*t
-      const expectedLogPrice = Math.log(initialValue) + (mean - 0.5 * Math.pow(volatility, 2)) * currentTime;
+      const expectedLogPrice = Math.log(startValue) + (mean - 0.5 * Math.pow(volatility, 2)) * currentTime;
       const currentLogPrice = Math.log(currentValue);
       const reversionDrift = meanReversionSpeed * (expectedLogPrice - currentLogPrice) * dt;
       
@@ -113,22 +119,40 @@ export function runMonteCarlo(params: SimulationParams): SimulationResult {
   };
 }
 
-export function calculateStatistics(values: number[]) {
+export function calculateStatistics(values: number[], initialValue?: number) {
   const sorted = [...values].sort((a, b) => a - b);
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  const median = sorted[Math.floor(sorted.length / 2)];
+  // True median: for an even count, average the two middle values instead of
+  // taking the upper one.
+  const n = sorted.length;
+  const median = n % 2 === 1
+    ? sorted[Math.floor(n / 2)]
+    : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
   const p5 = sorted[Math.floor(sorted.length * 0.05)];
   const p95 = sorted[Math.floor(sorted.length * 0.95)];
   const min = sorted[0];
   const max = sorted[sorted.length - 1];
 
+  // The AI-insight prompt reads these three fields; they were never returned,
+  // so it rendered $NaN / NaN%.
+  const hasStart = initialValue !== undefined && Number.isFinite(initialValue) && initialValue > 0;
+  const probLoss = hasStart
+    ? values.filter(v => v < initialValue).length / values.length
+    : 0;
+  const probGain50 = hasStart
+    ? values.filter(v => v > 1.5 * initialValue).length / values.length
+    : 0;
+
   return {
     mean,
+    average: mean,
     median,
     p5,
     p95,
     min,
     max,
-    count: values.length
+    count: values.length,
+    probLoss,
+    probGain50
   };
 }

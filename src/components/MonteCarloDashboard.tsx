@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  AreaChart, Area, BarChart, Bar, Cell, LabelList 
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import {
+  ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  Area, BarChart, Bar, Cell, LabelList
 } from 'recharts';
 import { 
   Play, 
@@ -36,7 +36,6 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 import { runMonteCarlo, calculateStatistics, SimulationParams, SimulationResult } from '@/src/lib/simulation';
 
@@ -50,6 +49,18 @@ const DEFAULT_PARAMS: SimulationParams = {
   meanReversionSpeed: 0
 };
 
+// Shared "is this scenario the active one" comparison (was duplicated in
+// toggleScenario, ScenarioCard, and the stress-test block).
+const paramsMatch = (
+  p: SimulationParams,
+  mean: number,
+  volatility: number,
+  meanReversionSpeed: number
+) =>
+  Math.abs(p.mean - mean) < 0.001 &&
+  Math.abs(p.volatility - volatility) < 0.001 &&
+  Math.abs(p.meanReversionSpeed - meanReversionSpeed) < 0.001;
+
 export default function MonteCarloDashboard() {
   const [params, setParams] = useState<SimulationParams>(DEFAULT_PARAMS);
   const [result, setResult] = useState<SimulationResult | null>(null);
@@ -62,15 +73,19 @@ export default function MonteCarloDashboard() {
 
   const stats = useMemo(() => {
     if (!result) return null;
-    return calculateStatistics(result.finalValues);
-  }, [result]);
+    return calculateStatistics(result.finalValues, params.initialValue);
+  }, [result, params.initialValue]);
+
+  const simTimeoutRef = useRef<number | null>(null);
 
   const runSimulation = () => {
     setIsSimulating(true);
     setSelectedPathIndex(null);
     setAiInsight(null);
-    // Use setTimeout to allow UI to update before heavy calculation
-    setTimeout(() => {
+    // Use setTimeout to allow UI to update before heavy calculation.
+    // The id is tracked so a re-run replaces a pending one and unmount cancels it.
+    if (simTimeoutRef.current) window.clearTimeout(simTimeoutRef.current);
+    simTimeoutRef.current = window.setTimeout(() => {
       const res = runMonteCarlo(params);
       setResult(res);
       setIsSimulating(false);
@@ -78,10 +93,7 @@ export default function MonteCarloDashboard() {
   };
 
   const toggleScenario = (mean: number, volatility: number, meanReversionSpeed: number = 0) => {
-    const isCurrent = 
-      Math.abs(params.mean - mean) < 0.001 && 
-      Math.abs(params.volatility - volatility) < 0.001 &&
-      Math.abs(params.meanReversionSpeed - meanReversionSpeed) < 0.001;
+    const isCurrent = paramsMatch(params, mean, volatility, meanReversionSpeed);
       
     if (isCurrent) {
       setParams({ 
@@ -142,6 +154,11 @@ export default function MonteCarloDashboard() {
 
   useEffect(() => {
     runSimulation();
+    return () => {
+      if (simTimeoutRef.current) window.clearTimeout(simTimeoutRef.current);
+    };
+    // Mount-only: the initial run uses the default params deliberately.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const chartData = useMemo(() => {
@@ -164,12 +181,15 @@ export default function MonteCarloDashboard() {
 
   const histogramData = useMemo(() => {
     if (!result) return [];
-    const values = result.finalValues;
+    // A poisoned run used to crash here: non-finite values made binWidth NaN and
+    // bins[NaN] undefined. Filter them out and guard the bin math.
+    const values = result.finalValues.filter((v) => Number.isFinite(v));
+    if (values.length === 0) return [];
     const min = Math.min(...values);
     const max = Math.max(...values);
     const binCount = 30;
     const binWidth = (max - min) / binCount;
-    
+
     const bins = Array.from({ length: binCount }, (_, i) => ({
       bin: min + i * binWidth,
       count: 0,
@@ -177,8 +197,10 @@ export default function MonteCarloDashboard() {
     }));
 
     values.forEach(v => {
-      const binIndex = Math.min(Math.floor((v - min) / binWidth), binCount - 1);
-      bins[binIndex].count++;
+      const binIndex = binWidth > 0
+        ? Math.min(Math.floor((v - min) / binWidth), binCount - 1)
+        : 0;
+      bins[Math.max(binIndex, 0)].count++;
     });
 
     return bins;
@@ -234,7 +256,7 @@ export default function MonteCarloDashboard() {
         const name = item.name;
         
         // Always show percentiles if bands are enabled
-        if (showConfidenceBands && ['p97_5', 'p95', 'p5', 'p2_5'].includes(name)) return true;
+        if (showConfidenceBands && ['p97_5', 'p95', 'p50', 'p5', 'p2_5'].includes(name)) return true;
         
         // Handle paths
         if (name.startsWith('path_')) {
@@ -254,7 +276,7 @@ export default function MonteCarloDashboard() {
 
       // Sort: Percentiles first (top to bottom), then paths
       const sortedPayload = [...filteredPayload].sort((a, b) => {
-        const order = ['p97_5', 'p95', 'p5', 'p2_5'];
+        const order = ['p97_5', 'p95', 'p50', 'p5', 'p2_5'];
         const aIdx = order.indexOf(a.name);
         const bIdx = order.indexOf(b.name);
         
@@ -278,6 +300,7 @@ export default function MonteCarloDashboard() {
 
               if (item.name === 'p97_5') displayName = '97.5th Percentile';
               else if (item.name === 'p95') displayName = '95th Percentile';
+              else if (item.name === 'p50') displayName = 'Median (50th Percentile)';
               else if (item.name === 'p5') displayName = '5th Percentile';
               else if (item.name === 'p2_5') displayName = '2.5th Percentile';
               else if (item.name.startsWith('path_')) {
@@ -377,10 +400,17 @@ export default function MonteCarloDashboard() {
                       <Label className="text-xs font-medium text-gray-600">Initial Investment</Label>
                       <span className="text-xs font-mono text-blue-600">{formatCurrency(params.initialValue)}</span>
                     </div>
-                    <Input 
-                      type="number" 
+                    <Input
+                      type="number"
                       value={params.initialValue}
-                      onChange={(e) => setParams({...params, initialValue: Number(e.target.value)})}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        // Ignore invalid entries (cleared field, 0, negatives): a
+                        // non-positive start value NaNs the entire simulation.
+                        if (Number.isFinite(v) && v > 0) {
+                          setParams({...params, initialValue: v});
+                        }
+                      }}
                       className="h-9 border-gray-200 focus:ring-blue-500"
                     />
                   </div>
@@ -498,10 +528,10 @@ export default function MonteCarloDashboard() {
                       icon={<Calculator className="h-4 w-4 text-gray-600" />}
                       delay={0}
                     />
-                    <StatCard 
-                      label="Expected Value (Mean)" 
-                      value={formatCurrency(stats.mean)} 
-                      subValue={`${((stats.mean / params.initialValue - 1) * 100).toFixed(1)}% total return`}
+                    <StatCard
+                      label="Deterministic Projection"
+                      value={formatCurrency(params.initialValue * Math.exp(params.mean * params.timeHorizon))}
+                      subValue="S₀ · e^(μt) — growth with no volatility"
                       icon={<TrendingUp className="h-4 w-4 text-blue-600" />}
                       delay={0.1}
                     />
@@ -621,7 +651,21 @@ export default function MonteCarloDashboard() {
                               />
                             </>
                           )}
-                          
+
+                          {/* Median path (was computed into every data point but never rendered) */}
+                          {showConfidenceBands && (
+                            <Line
+                              type="monotone"
+                              dataKey="p50"
+                              stroke="#7C3AED"
+                              strokeWidth={2}
+                              strokeDasharray="6 4"
+                              dot={false}
+                              isAnimationActive={false}
+                              connectNulls
+                            />
+                          )}
+
                           {result?.paths.map((_, i) => (
                             <Line 
                               key={i}
@@ -891,8 +935,8 @@ export default function MonteCarloDashboard() {
                   <h4 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-4">Market Stress Test</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
                     {(() => {
-                      const isBlackSwan = Math.abs(params.mean - (-0.20)) < 0.001 && Math.abs(params.volatility - 0.50) < 0.001;
-                      const isGoldenDecade = Math.abs(params.mean - 0.15) < 0.001 && Math.abs(params.volatility - 0.12) < 0.001;
+                      const isBlackSwan = paramsMatch(params, -0.20, 0.50, params.meanReversionSpeed);
+                      const isGoldenDecade = paramsMatch(params, 0.15, 0.12, params.meanReversionSpeed);
 
                       return (
                         <>
@@ -1016,10 +1060,7 @@ function ScenarioCard({
   icon: React.ReactNode,
   color: 'emerald' | 'blue' | 'amber' | 'orange' | 'red'
 }) {
-  const isCurrent = 
-    Math.abs(currentParams.mean - mean) < 0.001 && 
-    Math.abs(currentParams.volatility - volatility) < 0.001 &&
-    Math.abs(currentParams.meanReversionSpeed - meanReversionSpeed) < 0.001;
+  const isCurrent = paramsMatch(currentParams, mean, volatility, meanReversionSpeed);
 
   const colorClasses = {
     emerald: {
